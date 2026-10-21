@@ -11,9 +11,9 @@ export interface TierSettings {
 }
 
 const TIERS: Record<Tier, TierSettings> = {
-  low: { pixelRatio: 0.75, butterflies: 60, dust: 400 },
-  mid: { pixelRatio: 1, butterflies: 100, dust: 600 },
-  high: { pixelRatio: 1.5, butterflies: 140, dust: 800 },
+  low: { pixelRatio: 0.75, butterflies: 26, dust: 300 },
+  mid: { pixelRatio: 1, butterflies: 32, dust: 400 },
+  high: { pixelRatio: 1.5, butterflies: 40, dust: 500 },
 }
 const ORDER: Tier[] = ['low', 'mid', 'high']
 

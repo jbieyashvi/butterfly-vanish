@@ -30,7 +30,7 @@ varying vec2 vUv;
 varying float vAlpha;
 varying float vShade;
 varying float vTint;
-varying float vWarm;
+varying float vSheen;
 void main() {
   float flap = sin(iA.z);
   float a = 0.42 + iB.w * 0.9 * flap;          // wing elevation
@@ -47,8 +47,8 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4(p + iPos, 1.0);
   vUv = vec2((iB.x + uv.x) / ${WING_VARIANTS.toFixed(1)}, uv.y);
   vAlpha = iA.w;
-  vShade = 0.78 + 0.14 * abs(cos(a));
-  vWarm = smoothstep(0.4, 1.0, -flap);
+  vShade = 0.8 + 0.14 * abs(cos(a));
+  vSheen = smoothstep(0.55, 1.0, -flap);
   vTint = iB.y;
 }
 `
@@ -59,14 +59,15 @@ varying vec2 vUv;
 varying float vAlpha;
 varying float vShade;
 varying float vTint;
-varying float vWarm;
+varying float vSheen;
 void main() {
   vec4 t = texture2D(uWing, vUv);      // premultiplied
   float a = t.a * vAlpha;
   if (a < 0.003) discard;
   vec3 c = t.rgb * vShade;
-  c = mix(c, c * vec3(0.86, 0.8, 1.0), vTint);
-  c = mix(c, c * vec3(1.08, 1.0, 0.88), vWarm * 0.45);
+  // per-butterfly silver shading, and a faint cool sheen on the downstroke
+  c *= vec3(1.0 - vTint, 1.0 - vTint * 0.9, 1.0 - vTint * 0.6);
+  c += t.rgb * vec3(0.05, 0.055, 0.065) * vSheen;
   gl_FragColor = vec4(c * vAlpha, a);
 }
 `
@@ -92,6 +93,10 @@ export interface FlightContext {
 }
 
 const tmp = { x: 0, y: 0 }
+const fl = { x: 0, y: 0, vx: 0, vy: 0 }
+/** the flock's shared path is sampled at this rate for this long */
+const PATH_HZ = 60
+const PATH_N = 5 * PATH_HZ
 /** vanish butterflies fade out by this age (s) even if still on screen */
 const MAX_AGE = 2
 
@@ -109,13 +114,26 @@ export class ButterflySystem {
   private material: ShaderMaterial
   private texture: CanvasTexture
   private heroesLeft = 0
+  private expectedLeft = 1
+  private now = 0
+  // shared flock path for the current vanish wave (world px), reused across waves
+  private pathX = new Float32Array(PATH_N)
+  private pathY = new Float32Array(PATH_N)
+  private pathVX = new Float32Array(PATH_N)
+  private pathVY = new Float32Array(PATH_N)
+  private flockT0 = 0
+  private flockX = 0
+  private flockY = 0
+  private flockV = 1
+  /** horizontal direction the last flock left toward (+1 right, -1 left, world space) */
+  flockSide = 1
 
   constructor(cap: number) {
     this.cap = cap
     for (const name of [
       'mode', 'age', 'x', 'y', 'z', 'vx', 'vy', 'vz', 'ox', 'oy', 'heading', 'scale', 'baseScale', 'phase',
-      'freq', 'amp', 'alpha', 'variant', 'tint', 'pitch', 'speed', 'theta', 'curve', 'wobF', 'seed', 'followT',
-      'dvz', 'trail', 'ampB', 'sx', 'sy', 'sz', 'cx', 'cy', 'cz', 'tu', 'tv', 't0', 'arrive', 'grow',
+      'freq', 'amp', 'alpha', 'variant', 'tint', 'pitch', 'curve', 'wobF', 'seed', 'followT',
+      'dvz', 'trail', 'ampB', 'birth', 'offX', 'offY', 'bx', 'by', 'sx', 'sy', 'sz', 'cx', 'cy', 'cz', 'tu', 'tv', 't0', 'arrive', 'grow',
     ]) {
       const a = new Float32Array(cap)
       this.F[name] = a
@@ -203,18 +221,69 @@ export class ButterflySystem {
     if (i !== last) for (const a of this.fields) a[i] = a[last]
   }
 
-  /** Start a new wave: the next few butterflies include `heroes` slightly larger focal ones. */
-  startWave(heroes: number) {
+  /**
+   * Start a new wave of about `expected` butterflies, `heroes` of them slightly
+   * larger focal ones.
+   */
+  startWave(heroes: number, expected: number) {
     this.heroesLeft = heroes
+    this.expectedLeft = Math.max(heroes, expected)
+  }
+
+  /**
+   * Lay out the shared path of a vanish flock: it lifts off from the silhouette
+   * centre at world (x, y) and sweeps diagonally upward toward `side`, curving
+   * gently further out. Butterflies steer toward points around this path.
+   */
+  startFlock(t: number, x: number, y: number, side: number, view: View, reduced: boolean) {
+    this.now = t
+    this.flockT0 = t
+    this.flockX = x
+    this.flockY = y
+    this.flockSide = side
+    const V = view.H * (reduced ? 0.45 : 0.7)
+    this.flockV = V
+    const th0 = Math.PI / 2 - side * (reduced ? 0.4 : 0.55 + Math.random() * 0.15)
+    const bend = side * (0.1 + Math.random() * 0.1)
+    const h = 1 / PATH_HZ
+    let px = x
+    let py = y
+    for (let k = 0; k < PATH_N; k++) {
+      const tau = k * h
+      const r = Math.min(1, tau / 0.35)
+      const sp = V * r * r * (3 - 2 * r)
+      const th = th0 - bend * tau
+      const vx = Math.cos(th) * sp
+      const vy = Math.sin(th) * sp
+      this.pathX[k] = px
+      this.pathY[k] = py
+      this.pathVX[k] = vx
+      this.pathVY[k] = vy
+      px += vx * h
+      py += vy * h
+    }
+  }
+
+  /** Flock path position and velocity at path time tau (s). */
+  private pathAt(tau: number, out: { x: number; y: number; vx: number; vy: number }) {
+    const f = Math.max(0, tau) * PATH_HZ
+    const k = Math.min(PATH_N - 2, Math.floor(f))
+    const a = Math.min(1, f - k)
+    out.x = this.pathX[k] + (this.pathX[k + 1] - this.pathX[k]) * a
+    out.y = this.pathY[k] + (this.pathY[k + 1] - this.pathY[k]) * a
+    out.vx = this.pathVX[k] + (this.pathVX[k + 1] - this.pathVX[k]) * a
+    out.vy = this.pathVY[k] + (this.pathVY[k + 1] - this.pathVY[k]) * a
   }
 
   private initLook(i: number, view: View, reduced: boolean) {
     const F = this.F
-    const hero = this.heroesLeft > 0 && Math.random() < 0.15
+    // spread the heroes evenly over the wave so 2-3 actually appear
+    const hero = this.heroesLeft > 0 && Math.random() < this.heroesLeft / Math.max(1, this.expectedLeft)
     if (hero) this.heroesLeft--
-    F.baseScale[i] = view.sizeScale * (hero ? 22 + Math.random() * 6 : 9 + Math.random() * 8)
+    this.expectedLeft = Math.max(1, this.expectedLeft - 1)
+    F.baseScale[i] = view.sizeScale * (hero ? 22 + Math.random() * 5 : 11 + Math.random() * 6)
     F.variant[i] = Math.floor(Math.random() * WING_VARIANTS)
-    F.tint[i] = Math.random() < 0.12 ? 0.2 + Math.random() * 0.2 : Math.random() * 0.08
+    F.tint[i] = Math.random() * 0.12
     F.pitch[i] = -0.15 - Math.random() * 0.45
     F.freq[i] = (reduced ? 6 : 8) + Math.random() * 6
     F.phase[i] = Math.random() * Math.PI * 2
@@ -225,9 +294,10 @@ export class ButterflySystem {
 
   /**
    * A butterfly born from the silhouette at world (x, y, z).
-   * (ox, oy) is the outward direction of the dissolve front; side picks the drift direction.
+   * (ox, oy) is the outward direction of the dissolve front. It joins the
+   * current flock (see startFlock).
    */
-  spawnVanish(x: number, y: number, z: number, ox: number, oy: number, side: number, view: View, reduced: boolean) {
+  spawnVanish(x: number, y: number, z: number, ox: number, oy: number, view: View, reduced: boolean) {
     const i = this.alloc()
     if (i < 0) return
     const F = this.F
@@ -240,16 +310,23 @@ export class ButterflySystem {
     F.oy[i] = oy
     F.vx[i] = ox * 60
     F.vy[i] = oy * 60 + 30
-    F.followT[i] = 0.06 + Math.random() * 0.14
+    F.followT[i] = 0.05 + Math.random() * 0.1
     const rm = reduced ? 0.6 : 1
-    // fast enough to clear the frame within ~1 s of lifting off
-    F.speed[i] = (0.6 + Math.random() * 0.35) * view.H * rm
-    // world angle: straight up is PI/2; drift toward `side`
-    F.theta[i] = Math.PI / 2 - side * (0.45 + Math.random() * 0.7) * (reduced ? 0.6 : 1)
-    F.curve[i] = (0.15 + Math.random() * 0.25) * (reduced ? 0.4 : 1)
-    F.wobF[i] = 1.2 + Math.random() * 1.2
+    // later-born butterflies trail a little behind the head of the flock
+    const w = this.now - this.flockT0
+    F.birth[i] = w * (0.3 + Math.random() * 0.15)
+    // start from where it was born, settle into a loose place in the flock
+    F.bx[i] = x - this.flockX
+    F.by[i] = y - this.flockY
+    const r = Math.sqrt(Math.random()) * view.H * 0.12
+    const a = Math.random() * Math.PI * 2
+    F.offX[i] = Math.cos(a) * r * 1.3
+    F.offY[i] = Math.sin(a) * r * 0.8
+    F.curve[i] = view.H * (0.012 + Math.random() * 0.018) * (reduced ? 0.5 : 1)
+    F.wobF[i] = 1.4 + Math.random() * 1.4
     F.dvz[i] = (-40 + Math.random() * 120) * rm
-    F.trail[i] = 0.1 + Math.random() * 0.15
+    // only some butterflies shed a mote or two
+    F.trail[i] = Math.random() < 0.35 ? 0.25 + Math.random() * 0.3 : 99
     F.heading[i] = Math.atan2(oy, ox) - Math.PI / 2
   }
 
@@ -261,6 +338,9 @@ export class ButterflySystem {
   beginReturn(total: number, view: View, reduced: boolean, pickTarget: (out: { u: number; v: number; arrive: number }) => void) {
     const F = this.F
     const tgt = { u: 0.5, v: 0.5, arrive: 1 }
+    const side = this.flockSide
+    // a loop that swings down and in, curving the same way for everyone
+    const bendSign = side > 0 ? 1 : -1
     const setup = (i: number, t0: number) => {
       pickTarget(tgt)
       F.mode[i] = MODE_RETURN
@@ -275,7 +355,8 @@ export class ButterflySystem {
       const ux = F.sx[i] * 0.5
       const uy = F.sy[i] * 0.5
       const len = Math.hypot(F.sx[i], F.sy[i]) + 1
-      const bend = (Math.random() - 0.5) * 0.9 * len
+      // one shared bend for the whole flock, varied a little per butterfly
+      const bend = bendSign * (0.25 + Math.random() * 0.2) * len
       F.cx[i] = ux + (-F.sy[i] / len) * bend
       F.cy[i] = uy + (F.sx[i] / len) * bend + len * 0.15
       F.cz[i] = F.sz[i] * 0.5 + (Math.random() - 0.5) * 120
@@ -292,18 +373,12 @@ export class ButterflySystem {
       if (i < 0) break
       this.initLook(i, view, reduced)
       const z = -220 + Math.random() * 380
-      // enter from the top and upper sides, just outside the frame
-      const r = Math.random()
-      let sx: number
-      let sy: number
-      if (r < 0.55) {
-        sx = Math.random() * view.W
-        sy = -60 - Math.random() * 120
-      } else {
-        sx = r < 0.78 ? -60 - Math.random() * 100 : view.W + 60 + Math.random() * 100
-        sy = Math.random() * view.H * 0.7
-      }
-      view.toWorld(sx, sy, z, tmp)
+      // a small group just outside the upper corner the flock flew off toward
+      const r = Math.sqrt(Math.random()) * view.H * 0.14
+      const a = Math.random() * Math.PI * 2
+      const cx = side > 0 ? view.W + 70 : -70
+      const cy = view.H * 0.12
+      view.toWorld(cx + Math.cos(a) * r * 0.8, cy + Math.sin(a) * r, z, tmp)
       F.x[i] = tmp.x
       F.y[i] = tmp.y
       F.z[i] = z
@@ -317,6 +392,7 @@ export class ButterflySystem {
   update(dt: number, ctx: FlightContext) {
     const F = this.F
     const { view } = ctx
+    this.now = ctx.t
     const rm = ctx.reduced ? 0.7 : 1
     let i = 0
     while (i < this.n) {
@@ -331,19 +407,31 @@ export class ButterflySystem {
         let tvy: number
         let kz = 0
         if (age < F.followT[i]) {
-          // hover with the silhouette, drifting softly outward
+          // lift off with the silhouette, drifting softly outward
           tvx = F.ox[i] * 50 * rm + ctx.followVx
           tvy = F.oy[i] * 50 * rm + ctx.followVy + 40
         } else {
+          // steer toward a loose place around the shared flock path
           const fa = age - F.followT[i]
-          const ramp = Math.min(1, fa / 0.25)
-          const ease = ramp * ramp * (3 - 2 * ramp)
-          const th = F.theta[i] + Math.sin(fa * F.wobF[i] + F.seed[i]) * F.curve[i]
-          tvx = Math.cos(th) * F.speed[i] * ease
-          tvy = Math.sin(th) * F.speed[i] * ease
-          kz = ease
+          const w = ctx.t - this.flockT0
+          this.pathAt(w - F.birth[i], fl)
+          const g = Math.min(1, fa / 0.6)
+          const e = g * g * (3 - 2 * g)
+          const sp = Math.hypot(fl.vx, fl.vy) + 1
+          const wob = Math.sin(fa * F.wobF[i] * Math.PI * 2 * 0.5 + F.seed[i]) * F.curve[i]
+          const gx = fl.x + F.bx[i] + (F.offX[i] - F.bx[i]) * e - (fl.vy / sp) * wob
+          const gy = fl.y + F.by[i] + (F.offY[i] - F.by[i]) * e + (fl.vx / sp) * wob
+          tvx = fl.vx + (gx - px) * 3
+          tvy = fl.vy + (gy - py) * 3
+          const cap = this.flockV * 1.6
+          const tv = Math.hypot(tvx, tvy)
+          if (tv > cap) {
+            tvx *= cap / tv
+            tvy *= cap / tv
+          }
+          kz = Math.min(1, fa / 0.3)
         }
-        const k = 1 - Math.exp(-(age < F.followT[i] ? 6 : 4.5) * dt)
+        const k = 1 - Math.exp(-(age < F.followT[i] ? 6 : 5) * dt)
         F.vx[i] += (tvx - F.vx[i]) * k
         F.vy[i] += (tvy - F.vy[i]) * k
         F.vz[i] += (F.dvz[i] * kz - F.vz[i]) * (1 - Math.exp(-2 * dt))
@@ -356,13 +444,12 @@ export class ButterflySystem {
 
         // trails: a few motes shed while flying away
         F.trail[i] -= dt
-        if (F.trail[i] <= 0 && age > 0.15 && age < 1.4) {
-          F.trail[i] = (0.14 + Math.random() * 0.14) * (ctx.reduced ? 2 : 1)
+        if (F.trail[i] <= 0 && age > 0.2 && age < 1.1) {
+          F.trail[i] = (0.35 + Math.random() * 0.3) * (ctx.reduced ? 2 : 1)
           ctx.dust.emit(
             F.x[i] - F.vx[i] * 0.03, F.y[i] - F.vy[i] * 0.03, F.z[i],
             F.vx[i] * 0.05, F.vy[i] * 0.05, 0,
-            (1.5 + Math.random() * 2) * view.sizeScale, 0.2 + Math.random() * 0.25,
-            Math.random() < 0.15 ? DUST_GLINT : DUST_MOTE,
+            (1.2 + Math.random() * 1.5) * view.sizeScale, 0.15 + Math.random() * 0.2, DUST_MOTE,
           )
         }
 
@@ -395,7 +482,7 @@ export class ButterflySystem {
             F.vy[i] = (F.y[i] - py) / dt
           }
           if (s >= 1) {
-            if (Math.random() < 0.5) {
+            if (Math.random() < 0.3) {
               ctx.dust.emit(
                 F.x[i], F.y[i], 0,
                 (Math.random() - 0.5) * 40, (Math.random() - 0.3) * 40, 0,

@@ -49,7 +49,7 @@ void main() {
     a = core * 0.9 + halo * 0.5 + rays * 0.85;
   }
   a *= vAlpha * smoothstep(0.5, 0.3, d);
-  vec3 col = mix(vec3(1.0, 0.99, 1.0), vec3(0.84, 0.78, 1.0), fract(vSeed * 7.13) * 0.65);
+  vec3 col = mix(vec3(1.0), vec3(0.86, 0.89, 0.95), fract(vSeed * 7.13) * 0.7);
   // purely additive: alpha 0 so the base image is not darkened
   gl_FragColor = vec4(col * a, 0.0);
 }

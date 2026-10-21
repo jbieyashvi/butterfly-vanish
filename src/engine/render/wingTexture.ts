@@ -99,15 +99,15 @@ function drawWing(ctx: CanvasRenderingContext2D, shape: WingShape, ox: number, S
   ctx.save()
   const grad = ctx.createRadialGradient(...P(0.05, 0.5), 0, ...P(0.05, 0.5), S * 0.95)
   grad.addColorStop(0, 'rgba(255,255,255,1)')
-  grad.addColorStop(0.45, 'rgba(250,247,255,0.97)')
-  grad.addColorStop(0.78, 'rgba(246,242,250,0.94)')
-  grad.addColorStop(1, 'rgba(228,220,244,0.9)')
+  grad.addColorStop(0.5, 'rgba(250,250,252,0.97)')
+  grad.addColorStop(0.8, 'rgba(238,240,244,0.94)')
+  grad.addColorStop(1, 'rgba(220,223,230,0.9)')
   ctx.fillStyle = grad
   ctx.fill(wingPath)
 
   // veins and accents, clipped to the wing
   ctx.clip(wingPath)
-  ctx.strokeStyle = 'rgba(190,176,226,0.26)'
+  ctx.strokeStyle = 'rgba(150,156,170,0.3)'
   ctx.lineWidth = S * 0.007
   const veins: [number, number][] = [
     [0.9, 0.14], [0.86, 0.28], [0.74, 0.42], [0.8, 0.7], [0.62, 0.86], [0.36, 0.88],
@@ -118,9 +118,9 @@ function drawWing(ctx: CanvasRenderingContext2D, shape: WingShape, ox: number, S
     ctx.quadraticCurveTo(...P(x * 0.5, (y + 0.5) / 2 - 0.04), ...P(x, y))
     ctx.stroke()
   }
-  // lavender edge band
-  ctx.lineWidth = S * 0.05
-  ctx.strokeStyle = 'rgba(206,194,236,0.28)'
+  // faint silver edge band
+  ctx.lineWidth = S * 0.04
+  ctx.strokeStyle = 'rgba(176,182,196,0.24)'
   ctx.stroke(wingPath)
   if (shape.spots) {
     ctx.fillStyle = 'rgba(255,255,255,0.9)'
@@ -141,12 +141,18 @@ function drawWing(ctx: CanvasRenderingContext2D, shape: WingShape, ox: number, S
   ctx.strokeStyle = 'rgba(255,255,255,0.95)'
   ctx.stroke(wingPath)
 
-  // half body along the hinge
-  ctx.fillStyle = 'rgba(232,224,250,1)'
+  // slender half body along the hinge, with a fine antenna
+  ctx.fillStyle = 'rgba(206,210,220,1)'
   ctx.beginPath()
-  ctx.ellipse(ox, S * 0.52, S * 0.03, S * 0.26, 0, -Math.PI / 2, Math.PI / 2)
+  ctx.ellipse(ox, S * 0.53, S * 0.018, S * 0.24, 0, -Math.PI / 2, Math.PI / 2)
   ctx.fill()
   ctx.beginPath()
-  ctx.ellipse(ox, S * 0.25, S * 0.028, S * 0.03, 0, -Math.PI / 2, Math.PI / 2)
+  ctx.ellipse(ox, S * 0.27, S * 0.02, S * 0.022, 0, -Math.PI / 2, Math.PI / 2)
   ctx.fill()
+  ctx.strokeStyle = 'rgba(190,195,206,0.9)'
+  ctx.lineWidth = S * 0.006
+  ctx.beginPath()
+  ctx.moveTo(ox + S * 0.01, S * 0.25)
+  ctx.quadraticCurveTo(ox + S * 0.04, S * 0.14, ox + S * 0.09, S * 0.08)
+  ctx.stroke()
 }

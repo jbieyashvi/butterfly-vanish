@@ -101,10 +101,11 @@ void main() {
       col = mix(bg, col, A);
       if (uFrontMode > 0.5) {
         float band = exp(-pow((key - uRadius) / (uEdgeW * 0.8), 2.0)) * m;
-        vec3 glowCol = mix(vec3(1.0, 0.975, 0.93), vec3(0.9, 0.86, 1.0), smoothstep(0.55, 0.85, n));
-        col = mix(col, glowCol, band * 0.22 * uGlow);
+        // a brief silver shimmer along the front
+        vec3 glowCol = mix(vec3(0.97, 0.975, 0.985), vec3(0.88, 0.9, 0.95), smoothstep(0.55, 0.85, n));
+        col = mix(col, glowCol, band * 0.18 * uGlow);
         float g = texture2D(uNoise, vu * ap * 23.0 + vec2(uTime * 0.07, -uTime * 0.05)).r;
-        col += glowCol * band * smoothstep(0.78, 0.95, g) * 0.45 * uGlow;
+        col += glowCol * band * smoothstep(0.8, 0.96, g) * 0.35 * uGlow;
       }
     }
   }

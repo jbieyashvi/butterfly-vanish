@@ -4,7 +4,7 @@
 
 **Live:** https://jbieyashvi.github.io/butterfly-vanish/ (camera needs your permission; try the demo if you have no webcam)
 
-A webcam experiment. Pinch your thumb and index finger, then release. Your silhouette dissolves into pearl-white butterflies and the empty room you captured earlier shows through. Hold an open palm for about a second and you come back.
+A webcam experiment. Pinch your thumb and index finger, then release. Your silhouette dissolves into a small flock of white butterflies (about 25–40) that flies away together, and the empty room you captured earlier shows through. Hold an open palm for about a second and you come back.
 
 Everything runs locally in the browser: React, TypeScript, Vite, Three.js and MediaPipe Tasks Vision (selfie segmentation and the hand landmarker). The models and WASM are served from `public/`. There is no backend. Camera frames are never uploaded or saved, and the captured background lives only in memory.
 
@@ -39,14 +39,15 @@ States: setup → ready → dissolving → vanished → returning → ready. Whi
 3. Click **Use this background** and step back in. The app goes to *Ready* once it detects you (or click **I'm in frame**).
 4. **Pinch → release**: touch thumb to index finger, hold for about 0.2 s, then open quickly. Expect:
    - a sparkle at your fingertip;
-   - the dissolve front spreading from that point across your silhouette, with butterflies lifting off the edge;
-   - after about 1 s you are gone, and within about 2 s the butterflies have left and the room is empty.
+   - the dissolve front spreading from that point across your silhouette, with white butterflies lifting off the edge;
+   - the butterflies gathering into one loose flock that sweeps diagonally up and away from your hand;
+   - after about 1 s you are gone, the centre is clear by about 1.5 s, and the last butterflies leave by about 2.5 s.
 5. **Negative checks.** None of these should trigger:
    - a slow release;
    - a pinch where your hand then leaves the frame;
    - an open palm while in Ready;
    - a pinch with your hand far from or close to the camera, held but never released.
-6. **Return**: while vanished, hold an open palm toward the camera. A ring fills over about 1 s. Expect butterflies to fly back to where you are *now* (move a little first to check this) while your live image reappears, then the state returns to *Ready*.
+6. **Return**: while vanished, hold an open palm toward the camera. A ring fills over about 1 s. Expect a small flock to fly in from the side they left toward and settle onto where you are *now* (move a little first to check this) while your live image reappears, then the state returns to *Ready*.
 7. Repeat 3 to 5 cycles. Also try **Reduced motion** (calmer, fewer butterflies), **Hide UI (H)**, **Fullscreen**, **Retake background** and **Reset**.
 8. Switch tabs and come back: processing pauses while the tab is hidden. Closing the tab stops the camera.
 

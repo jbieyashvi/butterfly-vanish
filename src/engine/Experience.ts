@@ -140,7 +140,7 @@ export class Experience {
   constructor(canvas: HTMLCanvasElement, reducedMotion: boolean) {
     this.canvas = canvas
     this.stage = new Stage(canvas)
-    this.butterflies = new ButterflySystem(200)
+    this.butterflies = new ButterflySystem(60)
     this.dust = new DustSystem(2000)
     this.stage.fxScene.add(this.butterflies.mesh)
     this.stage.fxScene.add(this.dust.points)
@@ -533,7 +533,7 @@ export class Experience {
     if (!this.machine.requestVanish(now)) return
     const { minK, maxK } = this.computeKeys(u, v)
     const reduced = this.snap.reducedMotion
-    const budget = Math.min(this.butterflies.cap, this.governor.settings.butterflies) * (reduced ? 0.45 : 1)
+    const budget = Math.min(this.butterflies.cap, this.governor.settings.butterflies) * (reduced ? 0.6 : 1)
     this.tl = {
       kind: 'vanish',
       start: now,
@@ -554,14 +554,20 @@ export class Experience {
     }
     this.tl.prevR = this.tl.rStart
     this.patch({ notice: '', vanishCount: this.machine.vanishCount })
-    this.butterflies.startWave(3)
-    // the spark at the fingertips
-    uvToScreen(this.cover, u, v, this.tmp)
+    this.butterflies.startWave(reduced ? 2 : 3, Math.round(budget))
     const view = this.stage.view
+    // the flock lifts off from the body's centre and flies away from the hand
+    uvToScreen(this.cover, this.mask.cx, this.mask.cy, this.tmp2)
+    uvToScreen(this.cover, u, v, this.tmp)
+    const dx = this.tmp2.x - this.tmp.x
+    const side = Math.abs(dx) > view.W * 0.03 ? Math.sign(dx) : Math.random() < 0.5 ? -1 : 1
+    view.toWorld(this.tmp2.x, this.tmp2.y, 0, this.tmp2)
+    this.butterflies.startFlock(this.time, this.tmp2.x, this.tmp2.y, side, view, reduced)
+    // the spark at the fingertips
     view.toWorld(this.tmp.x, this.tmp.y, 0, this.tmp)
     const s = view.sizeScale
-    this.dust.emit(this.tmp.x, this.tmp.y, 0, 0, 0, 0, 34 * s, 0.4, DUST_FLARE)
-    for (let k = 0; k < (reduced ? 3 : 6); k++) {
+    this.dust.emit(this.tmp.x, this.tmp.y, 0, 0, 0, 0, 24 * s, 0.35, DUST_FLARE)
+    for (let k = 0; k < (reduced ? 2 : 4); k++) {
       const a = Math.random() * Math.PI * 2
       const sp = 40 + Math.random() * 70
       this.dust.emit(this.tmp.x, this.tmp.y, 0, Math.cos(a) * sp, Math.sin(a) * sp, 0, (2.5 + Math.random() * 3) * s, 0.25 + Math.random() * 0.25, DUST_GLINT)
@@ -604,8 +610,8 @@ export class Experience {
     this.patch({ returnCount: this.machine.returnCount, notice: '' })
     this.emitPalm(false, 0, 0, 0)
 
-    this.butterflies.startWave(2)
-    const total = Math.round(Math.min(this.butterflies.cap, this.governor.settings.butterflies) * (reduced ? 0.15 : 0.25))
+    const total = Math.round(Math.min(this.butterflies.cap, this.governor.settings.butterflies) * (reduced ? 0.35 : 0.5))
+    this.butterflies.startWave(2, total)
     const idx = this.band
     const cnt = m.collect(idx, 0.5)
     const keys = this.keys
@@ -703,7 +709,7 @@ export class Experience {
     const want = (tl.budget * bc) / tl.startArea + tl.carry
     let n = Math.floor(want)
     tl.carry = want - n
-    n = Math.min(n, reduced ? 6 : 14)
+    n = Math.min(n, reduced ? 3 : 6)
     const view = this.stage.view
     const s = view.sizeScale
     uvToScreen(this.cover, tl.originU, tl.originV, this.tmp2)
@@ -725,16 +731,15 @@ export class Experience {
       if (butterfly) {
         const z = -80 + Math.random() * 200
         view.toWorld(sx, sy, z, tmp)
-        const side = Math.abs(dx) > 0.2 ? Math.sign(dx) : Math.random() < 0.5 ? -1 : 1
-        this.butterflies.spawnVanish(tmp.x, tmp.y, z, dx, dy, side, view, reduced)
+        this.butterflies.spawnVanish(tmp.x, tmp.y, z, dx, dy, view, reduced)
       } else {
         view.toWorld(sx, sy, 0, tmp)
         this.dust.emit(tmp.x, tmp.y, 0, dx * 25 + (Math.random() - 0.5) * 20, dy * 25 + Math.random() * 20, 0,
-          (1.5 + Math.random() * 2.5) * s, 0.25 + Math.random() * 0.35, Math.random() < 0.12 ? DUST_GLINT : DUST_MOTE)
+          (1.2 + Math.random() * 2) * s, 0.2 + Math.random() * 0.3, Math.random() < 0.15 ? DUST_GLINT : DUST_MOTE)
       }
     }
     for (let k = 0; k < n; k++) emitOne(true)
-    const dustN = Math.min(reduced ? 3 : 8, Math.ceil(bc / 80))
+    const dustN = Math.min(reduced ? 1 : 3, Math.ceil(bc / 150))
     for (let k = 0; k < dustN; k++) emitOne(false)
   }
 
